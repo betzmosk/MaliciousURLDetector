@@ -1,0 +1,127 @@
+ # https://raw.githubusercontent.com/SummerOfAILearning/Group2HackathonChallenge/main/Training%20Data/Phishing_Mitre_Dataset_Summer_of_AI.csv
+#ZOOM: https://umd.zoom.us/j/6512373723
+
+
+###################################################################
+#Data Preprocessing (Data Cleaning and Feature Engineering)
+###################################################################
+#Import libraries
+import pandas as pd
+import sklearn
+import threading
+
+#reading data into dataframe
+training = pd.read_csv("/content/Phishing_Mitre_Dataset_Summer_of_AI.csv")
+
+#shows summary of data and datatypes
+training.info()
+# Split the url by the slashes
+training['URL'].str.split('/', expand=True)
+# Add Has_Sensitive_Words column: 1 if contains a sensitive word, else 0
+sensitive_words = ['confirm' 'account',
+'bank', 'secure', 'login', 'signin', 'register', 'update', 'sign-in', 'verify']
+sensitive = '|'.join(sensitive_words)
+training['Has_Sensitive_words'] = 0
+training.loc[training.URL.str.contains(sensitive), 'Has_Sensitive_words'] = 1
+# Add Has_IP column: 1 if contains IP else 0
+training['Has_IP'] = 0
+training.loc[training.URL.str.contains('\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'), 'Has_IP'] = 1
+# Add Num_Periods column (subtract 3 since each has 3 added to the end)
+training['Num_Periods'] = training['URL'].str.count('\.')-3
+# Add Has_sus_char column: 1 if contains suspicious characters else 0
+suspicious = ['-', '@', '%']
+suspicious_char = '|'.join(suspicious)
+training['Has_sus_char'] = training.URL.str.replace(r':|\.|/', '', regex=True).str.contains(suspicious_char)
+training['Has_sus_char'] = training['Has_sus_char'].astype(int)
+# Add URL_Length column
+training['URL_Length'] = training.URL.str.len()
+# Add num_slashes column
+training['num_slashes'] = training.URL.str.count('/')
+# Reorder columns so the target variable (Label) is last
+cols_at_end = ['Label']
+training = training[[c for c in training if c not in cols_at_end] 
+        + [c for c in cols_at_end if c in training]]
+
+###################################################################
+#Machine Learning
+###################################################################
+#Partition training and testing data
+#splitting training and testing data
+import scipy
+import numpy as np
+from sklearn.model_selection import GridSearchCV, cross_val_score, StratifiedKFold
+from sklearn.preprocessing import StandardScaler as SScaler
+from sklearn.linear_model import LogisticRegression as LR
+from sklearn.tree import DecisionTreeClassifier as DTClf
+from sklearn.ensemble import RandomForestClassifier as rfClfs
+from sklearn.ensemble import GradientBoostingClassifier as GBClf
+from sklearn.neighbors import KNeighborsClassifier as KNClf
+from sklearn.metrics import roc_auc_score as auc
+from sklearn.metrics import f1_score as f1
+from sklearn.model_selection import ParameterGrid as PGrid
+from sklearn.model_selection import train_test_split
+
+# Select the target variable column
+y_col = training["Label"]
+# Select the features (omit the url)
+x_cols = training.drop(columns=["Label", 'URL'])
+x_train, x_test, y_train, y_test = train_test_split(x_cols, y_col, test_size=0.2, random_state=42)
+
+
+
+
+
+
+'''
+#################################################
+Common Aspects of Phishing URLs:
+	- Try to see if a link is still active
+  - Ping sites to see if a site actually has a https (Jake)
+  - purposely mispelling names (e.g., G00gle instead of Google)
+  - most URLs containing at least one hyphen are phishing {0-no hyphen,1-hyphens} (Grant) 
+  - http or https appears twice {0-appears once,1-appears multiple times} (Grant)
+  - Is an IP address and not a domain/subdomain (Betz)
+  - Does not use standard ports such as 80 or 443 (URL may have : followed by obscure port at the end after the domain) (Jake)
+  - URL length? (if used normalize the lengths) (Grant)
+	- domain length (Betz)
+  - presence of subdomain (Betz)
+  - length of subdomain (Betz)
+  - contains .html at the end (some legitimate urls have this, but it seems to be mostly phishing urls)
+  	- note that the "l" is sometimes cut off by the ellipsis. so it looks like "htm..."
+  - special character (e.g., tilde ~) (Jake)
+  - contains an IPv4 address (e.g., http://122.175.46.128:8081/iTunes/... is a phishing link) (Jake)
+'''
+
+import requests
+import socket
+def ping_check_url(training_dataframe, timeout=5):
+  #Returns data as list formatted as so: [Port 80 Used, Port 443 Used, DNS Probe Success, Possibly direct other Port Used]
+  DNS_successful = True
+  port80used = True
+  port443used = True
+  possibly_uses_other_port = False
+  try: #Test if domain probe is successful
+    socket.gethostbyname(url.replace("http://", "").replace("https://", "").split(":")[0].split("/")[0])
+  except socket.gaierror:
+    DNS_successful = False
+    return [False, False, False, False]
+  
+  try: #Check for usage of Port 80
+    requests.get("http://" + url.replace("http://", "").replace("https://", "").split(":")[0].split("/")[0], timeout=timeout)
+  except Exception as exc:
+    print(str(exc))
+    port80used = False
+  
+  try: #Check for usage of Port 443
+    requests.get("https://" + url.replace("http://", "").replace("https://", "").split(":")[0].split("/")[0], timeout=timeout)
+  except Exception as exc:
+    print(str(exc))
+    port443used = False
+  
+  if ":" in url.replace("http://", "").replace("https://", "").split("/")[0]:
+    possibly_uses_other_port = True
+  
+  return [port80used, port443used, DNS_successful, possibly_uses_other_port]
+
+
+
